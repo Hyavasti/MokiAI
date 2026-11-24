@@ -1,0 +1,95 @@
+I am building "Moki", a native Android on-device AI voice assistant in Kotlin and Jetpack Compose for Xiaomi HyperOS (dual-SIM), using a tiered routing architecture:
+- Tier 0 (<5ms): Modular deterministic regex rules (`brain/rules/`) + discrete skill actions (`actions/`)
+- Tier 1: On-device Gemini Nano / LiteRT-LM (Gemma-3)
+- Tier 2: Optional cloud escalation
+
+### Strict Rules for Helping Me:
+1. Keep everything modular—never mix new logic into existing monolithic classes. You can always tell me to create and add new separate files (e.g., new rule files in `brain/rules/` or new action files in `actions/`) instead of stuffing everything into existing files.
+2. Only ask for or modify the exact files needed for the task, and only reference files that actually exist in my project tree below (unless explicitly telling me to create a brand-new file).
+
+### Exact Project Tree (`com.example.moki`):
+├── MainActivity.kt
+├── MokiApplication.kt
+├── actions/
+│   ├── AlarmAction.kt
+│   ├── AppLaunchAction.kt
+│   ├── CalculatorAction.kt
+│   ├── CallAction.kt
+│   ├── DeviceStatusAction.kt
+│   ├── DndAction.kt
+│   ├── EmailAction.kt
+│   ├── FlashlightAction.kt
+│   ├── LockScreenAction.kt
+│   ├── MessengerAction.kt
+│   ├── NavigationAction.kt
+│   ├── NotesAction.kt
+│   ├── SmsAction.kt
+│   ├── SmsReadAction.kt
+│   └── TimerAction.kt
+├── brain/
+│   ├── CloudEscalationEngine.kt
+│   ├── DeterministicMatch.kt
+│   ├── DeterministicMatcher.kt
+│   ├── GeminiNanoEngine.kt
+│   ├── LiteRtLmEngine.kt
+│   ├── MokiBrainRouter.kt
+│   ├── MokiPersonaPrompt.kt
+│   └── rules/
+│       ├── ContactAliasResolver.kt
+│       ├── DeterministicRule.kt
+│       ├── MessageTextNormalizer.kt
+│       ├── MessengerRule.kt
+│       ├── NotesRule.kt
+│       └── ParsedUtterance.kt
+│       └── (other modular DeterministicRule files)
+├── data/
+│   ├── local/
+│   │   ├── ChatMessageDao.kt
+│   │   ├── ChatMessageEntity.kt
+│   │   ├── MokiDatabase.kt
+│   │   ├── NoteDao.kt
+│   │   ├── NoteEntity.kt
+│   │   ├── TraceLogDao.kt
+│   │   └── TraceLogEntity.kt
+│   ├── model/
+│   │   └── ModelDownloadWorker.kt
+│   └── preferences/
+│       └── MokiSettingsRepository.kt
+├── services/
+│   ├── MokiAccessibilityService.kt
+│   ├── MokiCallScreeningService.kt
+│   └── MokiVoiceInteractionService.kt
+├── skills/
+│   ├── JsonSanitizer.kt
+│   ├── MokiSkill.kt
+│   └── MokiSkillRegistry.kt
+├── ui/
+│   ├── MokiViewModel.kt
+│   ├── components/
+│   │   ├── ActionConfirmCard.kt
+│   │   ├── ChatBubbleComponent.kt
+│   │   ├── ModelDownloadCard.kt
+│   │   ├── PermissionChecklistCard.kt
+│   │   └── VoiceOrbComponent.kt
+│   ├── navigation/
+│   │   └── MokiNavHost.kt
+│   ├── screens/
+│   │   ├── MainScreen.kt
+│   │   └── SetupScreen.kt
+│   └── theme/
+└── voice/
+    ├── MokiTtsSpeaker.kt
+    ├── MokiVoiceService.kt
+    ├── SpeechCaptureManager.kt
+    ├── SpeechWakeDetector.kt
+    └── VoiceState.kt
+
+### What Is Already Working:
+- Fuzzy wake-word detection ("Hey Moki" / "Hey Maki" / "Timoki") with 600–750ms mic hand-off delay, voice `"stop"` / `"reset"`, and top-bar Reset button (`↻`) in `MainScreen.kt`.
+- Pending confirmation voice handling (`"yes"` / `"yes confirm"` / `"no"` / `"cancel"`) in `MokiBrainRouter.kt`.
+- Dual-SIM SMS (`SmsAction.kt` using `SubscriptionManager.getDefaultSmsSubscriptionId()`), scheduled SMS, SMS reading (`SmsReadAction.kt`).
+- Messenger chat, audio call, and video call automation via `MokiAccessibilityService.kt` + `ContactAliasResolver.kt` (normalizing speech variations of "Anne" / "Anne Fornillos" and "Jr Saludo").
+- Notes save, append, and read (`NotesRule.kt` + `NotesAction.kt`), Flashlight, DND, Navigation, Calculator, Battery/Time status.
+
+### What I Want to Work On Next:
+[Describe the next feature, bug fix, or refinement here]
