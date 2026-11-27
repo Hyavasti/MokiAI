@@ -3,17 +3,10 @@ package com.example.moki.brain
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.example.moki.brain.providers.CloudProviderRegistry
 import com.example.moki.data.preferences.EscalationMode
 import com.example.moki.data.preferences.MokiSettingsRepository
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Tier 2: Optional escalation (only used when user explicitly enables Gemini App handoff or Cloud API).
@@ -28,7 +21,17 @@ class CloudEscalationEngine(
         return when (settings.escalationMode) {
             EscalationMode.LOCAL_ONLY -> null
             EscalationMode.GEMINI_APP_HANDOFF -> launchGeminiAppHandoff(userQuery)
-            EscalationMode.CLOUD_API -> callGeminiRestApi(settings.geminiApiKey, systemPrompt, userQuery)
+            EscalationMode.CLOUD_API -> {
+                val activeProvider = settings.activeCloudProvider
+                val apiKey = settings.apiKeyFor(activeProvider)
+                if (apiKey.isBlank()) return null
+                CloudProviderRegistry.get(activeProvider).generate(
+                    apiKey = apiKey,
+                    modelOverride = settings.cloudModelOverride,
+                    systemPrompt = systemPrompt,
+                    userQuery = userQuery
+                )
+            }
         }
     }
 
@@ -50,44 +53,6 @@ class CloudEscalationEngine(
             }
             context.startActivity(webIntent)
             "Opening Gemini in your browser for that one."
-        }
-    }
-
-    private suspend fun callGeminiRestApi(
-        apiKey: String,
-        systemPrompt: String,
-        userQuery: String
-    ): String? = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) return@withContext null
-        try {
-            val payload = JSONObject().apply {
-                put("contents", JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("parts", JSONArray().apply {
-                            put(JSONObject().put("text", "$systemPrompt\n\nUser: $userQuery"))
-                        })
-                    })
-                })
-            }
-
-            val request = Request.Builder()
-                .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
-                .post(payload.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-
-            OkHttpClient().newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext null
-                val body = JSONObject(response.body?.string().orEmpty())
-                body.getJSONArray("candidates")
-                    .getJSONObject(0)
-                    .getJSONObject("content")
-                    .getJSONArray("parts")
-                    .getJSONObject(0)
-                    .getString("text")
-                    .trim()
-            }
-        } catch (_: Exception) {
-            null
         }
     }
 }

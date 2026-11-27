@@ -7,6 +7,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.example.moki.MokiApplication
 import com.example.moki.brain.PendingSkillConfirmation
+import com.example.moki.brain.providers.CloudProviderType
 import com.example.moki.data.local.ChatMessageEntity
 import com.example.moki.data.local.TraceLogEntity
 import com.example.moki.data.model.ModelDownloadWorker
@@ -115,6 +116,24 @@ class MokiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveGeminiApiKey(key: String) {
         viewModelScope.launch { settingsRepo.updateGeminiApiKey(key) }
+    }
+
+    fun setActiveCloudProvider(provider: CloudProviderType) {
+        viewModelScope.launch {
+            settingsRepo.updateActiveCloudProvider(provider)
+        }
+    }
+
+    fun saveCloudProviderConfig(
+        provider: CloudProviderType,
+        apiKey: String,
+        modelOverride: String
+    ) {
+        viewModelScope.launch {
+            settingsRepo.updateActiveCloudProvider(provider)
+            settingsRepo.updateProviderApiKey(provider, apiKey)
+            settingsRepo.updateCloudModelOverride(modelOverride)
+        }
     }
 
     fun setEscalationMode(mode: EscalationMode) {

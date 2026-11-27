@@ -36,6 +36,8 @@ class MokiAccessibilityService : AccessibilityService() {
     private var lastMapsBannerText: String? = null
     private var lastActionTimestamp = 0L
 
+    private var floatingOverlay: com.example.moki.ui.overlay.MokiFloatingOverlay? = null
+
     private val stepPoller = object : Runnable {
         override fun run() {
             if (messengerStep != MessengerStep.IDLE) {
@@ -55,6 +57,7 @@ class MokiAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        floatingOverlay = com.example.moki.ui.overlay.MokiFloatingOverlay(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -78,6 +81,8 @@ class MokiAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         pollHandler.removeCallbacksAndMessages(null)
+        floatingOverlay?.dismiss()
+        floatingOverlay = null
         instance = null
         super.onDestroy()
     }
@@ -363,6 +368,12 @@ class MokiAccessibilityService : AccessibilityService() {
         for (i in 0 until node.childCount) {
             traverseText(node.getChild(i), out)
         }
+    }
+
+    fun isFloatingOverlayShowing(): Boolean = floatingOverlay?.isShowing == true
+
+    fun toggleFloatingOverlay() {
+        floatingOverlay?.toggle()
     }
 
     companion object {

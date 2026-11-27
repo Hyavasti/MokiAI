@@ -2,6 +2,7 @@ package com.example.moki.voice
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -17,13 +18,16 @@ class SpeechWakeDetector(
 ) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var recognizer: SpeechRecognizer? = null
     private var isRunning = false
     private var isPausedForTurn = false
+    private var previousAudioMode: Int? = null
 
-    // Matches "hey moki", "hey maki", "timoki", "hi moki", "hey monkey", "hey mokey", "hey mookie", "moki"
+    // Anchored at start (^) so random background music lyrics mid-sentence don't lock or falsely wake Moki,
+    // while direct "Hey", "Hello", "Hey Moki", "Hello Moki", and common mishearings trigger instantly.
     private val wakeRegex = Regex(
-        """^(?:(?:hey|hi|yo|oy|ok|okay|ti|te|hey\s+there)\s*)?(?:moki|maki|mokey|mookie|moky|mocky|monkey|timoki|himoki)\b[,\s.?!]*(.*)$""",
+        """^(?:(?:hey|hoy|hello|hi|yo|oy|ok|okay|ti|te)\s+(?:there\s+)?(?:moki|maki|mokey|mookie|moky|mocky|monkey|smoky|rocky|pokey|lucky|timoki|himoki)|(?:moki|maki|mokey|mookie|moky|mocky|timoki|himoki)|(?:hey|hello)(?:\s+moki)?)\b[,\s.?!]*(.*)$""",
         RegexOption.IGNORE_CASE
     )
 
@@ -31,6 +35,7 @@ class SpeechWakeDetector(
         if (isRunning) return
         isRunning = true
         isPausedForTurn = false
+        enableNoiseSuppressionMode()
         scheduleRestart(150L)
     }
 
@@ -43,6 +48,7 @@ class SpeechWakeDetector(
     fun resumeAfterTurn() {
         if (!isRunning) return
         isPausedForTurn = false
+        enableNoiseSuppressionMode()
         scheduleRestart(750L)
     }
 
@@ -51,6 +57,30 @@ class SpeechWakeDetector(
         isPausedForTurn = false
         mainHandler.removeCallbacksAndMessages(null)
         mainHandler.post { destroyRecognizer() }
+        restoreAudioMode()
+    }
+
+    private fun enableNoiseSuppressionMode() {
+        try {
+            if (previousAudioMode == null) {
+                previousAudioMode = audioManager.mode
+            }
+            if (audioManager.mode != AudioManager.MODE_IN_COMMUNICATION) {
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            }
+        } catch (e: Exception) {
+            Log.w("SpeechWakeDetector", "Could not set communication audio mode", e)
+        }
+    }
+
+    private fun restoreAudioMode() {
+        try {
+            previousAudioMode?.let { savedMode ->
+                audioManager.mode = savedMode
+                previousAudioMode = null
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun scheduleRestart(delayMs: Long) {
@@ -90,7 +120,7 @@ class SpeechWakeDetector(
                             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             .orEmpty()
                         if (!checkWakeCandidates(candidates, isFinal = true)) {
-                            scheduleRestart(250L)
+                            scheduleRestart(200L)
                         }
                     }
 
@@ -98,7 +128,7 @@ class SpeechWakeDetector(
                         val backoff = when (error) {
                             SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
                             SpeechRecognizer.ERROR_CLIENT -> 850L
-                            else -> 300L
+                            else -> 250L
                         }
                         scheduleRestart(backoff)
                     }
@@ -109,9 +139,8 @@ class SpeechWakeDetector(
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10_000L)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 10_000L)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 10_000L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1_500L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1_200L)
                     putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                 }
                 startListening(intent)

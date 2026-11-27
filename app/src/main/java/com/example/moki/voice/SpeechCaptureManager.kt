@@ -2,6 +2,7 @@ package com.example.moki.voice
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -14,6 +15,7 @@ import java.util.Locale
 class SpeechCaptureManager(private val context: Context) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var recognizer: SpeechRecognizer? = null
     private var lastPartialHeard: String = ""
     private var hasDeliveredResult = false
@@ -30,12 +32,13 @@ class SpeechCaptureManager(private val context: Context) {
         }
     }
 
+    // Wider buffers so noisy-room pauses don't cut off your command mid-sentence
     private fun adaptiveSilenceDelayMs(partialText: String): Long {
         val wordCount = partialText.trim().split(Regex("\\s+")).count { it.isNotEmpty() }
         return when {
-            wordCount <= 3 -> 850L
-            wordCount <= 7 -> 1450L
-            else -> 2100L
+            wordCount <= 2 -> 1650L
+            wordCount <= 6 -> 2200L
+            else -> 2800L
         }
     }
 
@@ -52,6 +55,14 @@ class SpeechCaptureManager(private val context: Context) {
         lastPartialHeard = ""
         hasDeliveredResult = false
         activeOnFinal = onFinalResult
+
+        // Keep HyperOS dual-mic hardware noise suppression active during command capture
+        try {
+            if (audioManager.mode != AudioManager.MODE_IN_COMMUNICATION) {
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            }
+        } catch (_: Exception) {
+        }
 
         mainHandler.postDelayed({
             isStarting = false
@@ -93,12 +104,21 @@ class SpeechCaptureManager(private val context: Context) {
                             if (hasDeliveredResult) return
                             hasDeliveredResult = true
                             mainHandler.removeCallbacks(silenceCommitRunnable)
-                            val finalStr = results
+
+                            val candidates = results
                                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                                ?.firstOrNull()
-                                ?.trim()
                                 .orEmpty()
-                            val bestText = finalStr.ifEmpty { lastPartialHeard }
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() }
+
+                            // Pick the most complete candidate if #1 was truncated by background noise
+                            val finalStr = candidates.maxByOrNull { it.length }.orEmpty()
+                            val bestText = if (finalStr.length >= lastPartialHeard.length) {
+                                finalStr
+                            } else {
+                                lastPartialHeard
+                            }
+
                             stopListeningInternal()
                             if (bestText.isNotBlank()) {
                                 onFinalResult(bestText)
@@ -122,12 +142,12 @@ class SpeechCaptureManager(private val context: Context) {
                     })
 
                     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
                         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2200L)
-                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1600L)
+                        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2800L)
+                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2200L)
                         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                     }
                     startListening(intent)

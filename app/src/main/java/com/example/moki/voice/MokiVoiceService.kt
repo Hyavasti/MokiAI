@@ -26,6 +26,7 @@ class MokiVoiceService : Service() {
     private lateinit var speechCapture: SpeechCaptureManager
     private lateinit var ttsSpeaker: MokiTtsSpeaker
     private var followUpCount = 0
+    private var isCapturingCommand = false
 
     override fun onCreate() {
         super.onCreate()
@@ -53,16 +54,36 @@ class MokiVoiceService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_TRIGGER_TURN -> {
+                if (isCapturingCommand) return START_STICKY
                 followUpCount = 0
                 onWakeWordTriggered(skipAck = false)
             }
             ACTION_LISTEN_DIRECT -> {
+                if (isCapturingCommand) return START_STICKY
                 followUpCount = 0
+                ttsSpeaker.stop()
                 wakeDetector.pauseForActiveTurn()
                 beginCommandListening()
             }
+            ACTION_SPEAK_TEXT -> {
+                val textToSpeak = intent.getStringExtra(EXTRA_SPEAK_TEXT).orEmpty()
+                if (textToSpeak.isNotBlank()) {
+                    followUpCount = 0
+                    isCapturingCommand = false
+                    speechCapture.stopListening()
+                    wakeDetector.pauseForActiveTurn()
+                    _voiceState.value = VoiceState.SpeakingResponse(textToSpeak)
+                    ttsSpeaker.speak(textToSpeak) {
+                        serviceScope.launch {
+                            delay(600L)
+                            armWakeWord()
+                        }
+                    }
+                }
+            }
             ACTION_STOP_LOOP -> {
                 followUpCount = 0
+                isCapturingCommand = false
                 ttsSpeaker.stop()
                 speechCapture.stopListening()
                 serviceScope.launch {
@@ -72,6 +93,7 @@ class MokiVoiceService : Service() {
             }
             ACTION_DISABLE_SERVICE -> {
                 followUpCount = 0
+                isCapturingCommand = false
                 wakeDetector.stop()
                 speechCapture.stopListening()
                 ttsSpeaker.stop()
@@ -85,6 +107,7 @@ class MokiVoiceService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        isCapturingCommand = false
         wakeDetector.stop()
         speechCapture.stopListening()
         ttsSpeaker.shutdown()
@@ -94,6 +117,7 @@ class MokiVoiceService : Service() {
     }
 
     private fun onWakeWordTriggered(skipAck: Boolean = false) {
+        if (isCapturingCommand) return
         wakeDetector.pauseForActiveTurn()
         if (skipAck) {
             beginCommandListening()
@@ -109,18 +133,24 @@ class MokiVoiceService : Service() {
     }
 
     private fun beginCommandListening() {
+        if (isCapturingCommand) return
+        isCapturingCommand = true
+        wakeDetector.pauseForActiveTurn()
         _voiceState.value = VoiceState.ListeningCommand("")
+
         speechCapture.startListening(
             onPartialResult = { partial ->
                 _voiceState.value = VoiceState.ListeningCommand(partial)
             },
             onFinalResult = { finalUtterance ->
+                isCapturingCommand = false
                 handleUserUtterance(finalUtterance)
             },
             onNoSpeechOrError = {
+                isCapturingCommand = false
                 followUpCount = 0
                 serviceScope.launch {
-                    delay(600L)
+                    delay(650L)
                     armWakeWord()
                 }
             }
@@ -128,13 +158,16 @@ class MokiVoiceService : Service() {
     }
 
     private fun handleUserUtterance(utterance: String) {
+        isCapturingCommand = false
         wakeDetector.pauseForActiveTurn()
         val normalized = utterance.lowercase().replace(Regex("""[.,!?]"""), "").trim()
 
-        // 1. Instant voice STOP command — exits active listening immediately without waking Gemma-3
+        // 1. Instant voice STOP / THANK YOU command — exits active listening immediately without waking Gemma-3
         if (normalized in setOf(
                 "stop", "stop listening", "go to sleep", "sleep", "shut up",
-                "be quiet", "quiet", "standby", "pause listening"
+                "be quiet", "quiet", "standby", "pause listening",
+                "thank you", "thanks", "thank you moki", "thanks moki",
+                "that's all", "thats all"
             )
         ) {
             followUpCount = 0
@@ -143,7 +176,7 @@ class MokiVoiceService : Service() {
             MokiApplication.instance.brainRouter.dismissPendingAction()
             clearConfirmationState()
             serviceScope.launch {
-                delay(600L)
+                delay(650L)
                 armWakeWord()
             }
             return
@@ -165,7 +198,7 @@ class MokiVoiceService : Service() {
                 _voiceState.value = VoiceState.SpeakingResponse(reply)
                 ttsSpeaker.speak(reply) {
                     serviceScope.launch {
-                        delay(600L)
+                        delay(650L)
                         armWakeWord()
                     }
                 }
@@ -192,7 +225,7 @@ class MokiVoiceService : Service() {
                         beginFollowUpWindow()
                     } else {
                         followUpCount = 0
-                        delay(600L)
+                        delay(650L)
                         armWakeWord()
                     }
                 }
@@ -201,18 +234,24 @@ class MokiVoiceService : Service() {
     }
 
     private fun beginFollowUpWindow() {
+        if (isCapturingCommand) return
+        isCapturingCommand = true
+        wakeDetector.pauseForActiveTurn()
         _voiceState.value = VoiceState.ListeningCommand("")
+
         speechCapture.startListening(
             onPartialResult = { partial ->
                 _voiceState.value = VoiceState.ListeningCommand(partial)
             },
             onFinalResult = { followUp ->
+                isCapturingCommand = false
                 handleUserUtterance(followUp)
             },
             onNoSpeechOrError = {
+                isCapturingCommand = false
                 followUpCount = 0
                 serviceScope.launch {
-                    delay(600L)
+                    delay(650L)
                     armWakeWord()
                 }
             }
@@ -220,6 +259,7 @@ class MokiVoiceService : Service() {
     }
 
     private fun armWakeWord() {
+        if (isCapturingCommand) return
         wakeDetector.start()
         wakeDetector.resumeAfterTurn()
         _voiceState.value = VoiceState.WakeWordArmed
@@ -258,8 +298,10 @@ class MokiVoiceService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_TRIGGER_TURN = "com.example.moki.TRIGGER_TURN"
         const val ACTION_LISTEN_DIRECT = "com.example.moki.LISTEN_DIRECT"
+        const val ACTION_SPEAK_TEXT = "com.example.moki.SPEAK_TEXT"
         const val ACTION_STOP_LOOP = "com.example.moki.STOP_LOOP"
         const val ACTION_DISABLE_SERVICE = "com.example.moki.DISABLE_SERVICE"
+        const val EXTRA_SPEAK_TEXT = "extra_speak_text"
 
         private val _voiceState = MutableStateFlow<VoiceState>(VoiceState.Idle)
         val voiceState: StateFlow<VoiceState> = _voiceState
@@ -274,6 +316,18 @@ class MokiVoiceService : Service() {
         fun startService(context: Context, action: String? = null) {
             val intent = Intent(context, MokiVoiceService::class.java).apply {
                 this.action = action
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun speakText(context: Context, text: String) {
+            val intent = Intent(context, MokiVoiceService::class.java).apply {
+                action = ACTION_SPEAK_TEXT
+                putExtra(EXTRA_SPEAK_TEXT, text)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)

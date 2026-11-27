@@ -12,6 +12,8 @@ class DeterministicMatcher(
         GreetingRule(),
         DeviceStatusRule(),
         CalculatorRule(),
+        ScreenContextRule(),
+        WebSearchRule(),
         MessengerRule(),
         MapsRule(),
         NotesRule(),
@@ -88,7 +90,6 @@ class DeterministicMatcher(
             text = stripped.lowercase(),
             fullLower = original.lowercase()
         )
-
     }
 
     private fun clearPendingSlot() {

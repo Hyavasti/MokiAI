@@ -97,5 +97,17 @@
                 android:name="android.voice_interaction"
                 android:resource="@xml/moki_voice_interaction" />
         </service>
+
+        <service
+            android:name=".services.MokiOverlayTileService"
+            android:exported="true"
+            android:icon="@android:drawable/ic_btn_speak_now"
+            android:label="Moki AI"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
     </application>
 </manifest>

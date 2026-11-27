@@ -15,6 +15,12 @@ class MokiApplication : Application() {
         private set
     lateinit var skillRegistry: MokiSkillRegistry
         private set
+    lateinit var geminiNanoEngine: GeminiNanoEngine
+        private set
+    lateinit var liteRtLmEngine: LiteRtLmEngine
+        private set
+    lateinit var cloudEscalationEngine: CloudEscalationEngine
+        private set
     lateinit var brainRouter: MokiBrainRouter
         private set
 
@@ -24,6 +30,9 @@ class MokiApplication : Application() {
         database = MokiDatabase.getInstance(this)
         settingsRepository = MokiSettingsRepository(this)
         skillRegistry = MokiSkillRegistry()
+        geminiNanoEngine = GeminiNanoEngine()
+        liteRtLmEngine = LiteRtLmEngine(this)
+        cloudEscalationEngine = CloudEscalationEngine(this, settingsRepository)
 
         registerDefaultSkills()
 
@@ -31,9 +40,9 @@ class MokiApplication : Application() {
             context = this,
             skillRegistry = skillRegistry,
             deterministicMatcher = DeterministicMatcher(),
-            geminiNanoEngine = GeminiNanoEngine(),
-            liteRtLmEngine = LiteRtLmEngine(this),
-            cloudEscalationEngine = CloudEscalationEngine(this, settingsRepository),
+            geminiNanoEngine = geminiNanoEngine,
+            liteRtLmEngine = liteRtLmEngine,
+            cloudEscalationEngine = cloudEscalationEngine,
             chatMessageDao = database.chatMessageDao(),
             traceLogDao = database.traceLogDao(),
             settingsRepository = settingsRepository
@@ -56,6 +65,20 @@ class MokiApplication : Application() {
         skillRegistry.register(GoogleMapsAction(this))
         skillRegistry.register(WeatherAction(this))
         skillRegistry.register(DeviceStatusAction(this))
+        skillRegistry.register(
+            ScreenSummaryAction(
+                geminiNanoEngine = geminiNanoEngine,
+                liteRtLmEngine = liteRtLmEngine,
+                cloudEscalationEngine = cloudEscalationEngine,
+                settingsRepository = settingsRepository
+            )
+        )
+        skillRegistry.register(
+            WebSearchAction(
+                liteRtLmEngine = liteRtLmEngine,
+                cloudEngine = cloudEscalationEngine
+            )
+        )
     }
 
     companion object {
